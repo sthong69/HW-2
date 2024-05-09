@@ -157,24 +157,30 @@ def format_export_answers(answers, list_features):
 
 def train_model(selected_features, df_train_input, limit, tokenizer, model, model_name, from_checkpoint):
     df_train = df_train_input[selected_features]
+    """
     print("Shuffling training dataset...")
     df_train = shuffle(df_train)
     print("Finished shuffling training dataset!")
-
+    """
+    
     # CUT FOR TEST PURPOSE
     df_train = df_train.iloc[:limit]
 
     print("Starting NLTK pipeline on training dataset...")
-    df_train['text'] = df_train['text'].apply(nltk_pipeline)    
+    df_train['text'] = df_train['text'].apply(nltk_pipeline)
+    df_train['title'] = df_train['title'].apply(nltk_pipeline)    
     print("Finished NLTK pipeline on training dataset!")
 
     train_dataframe, validation_dataframe = train_test_split(df_train, test_size=0.33, random_state=42)
-    X_train, y_train = train_dataframe['text'].to_list(), train_dataframe['rating'].astype(int).to_list()
-    X_val, y_val = validation_dataframe['text'].to_list(), validation_dataframe['rating'].astype(int).to_list()
+    X_train_title, X_train_text, y_train = train_dataframe['title'].to_list(),train_dataframe['text'].to_list(), train_dataframe['rating'].astype(int).to_list()
+    X_val_title, X_val_text, y_val = validation_dataframe['title'].to_list(),validation_dataframe['text'].to_list(), validation_dataframe['rating'].astype(int).to_list()
 
     # Reviews now range now range from 0 to 4
     y_train = [grade-1 for grade in y_train]
     y_val = [grade-1 for grade in y_val]
+
+    X_train = [X_train_title[i] + "[SEP] " + X_train_text[i] for i in range(len(X_train_title))]
+    X_val = [X_val_title[i] + "[SEP] " + X_val_text[i] for i in range(len(X_val_title))]
 
     # Encode features
     X_train_encoded = tokenizer(X_train, padding="max_length", truncation=True)
@@ -214,12 +220,14 @@ def make_predictions(selected_features, df_test_input, tokenizer, model):
 
     print("Starting NLTK pipeline on testing dataset...")
     df_test['text'] = df_test['text'].apply(nltk_pipeline)
+    df_test['title'] = df_test['title'].apply(nltk_pipeline)  
     print("Finished NLTK pipeline on testing dataset!")
 
-    X_test = df_test['text'].to_list()
+    X_test_title, X_test_text = df_test['title'].to_list(),df_test['text'].to_list()
+    X_test = [X_test_title[i] + "[SEP] " + X_test_text[i] for i in range(len(X_test_title))]
 
     classifier = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer, padding=True, truncation=True)
-
+ 
     print("Starting classification...")
     predictions = classifier(X_test)
     print("Finished classification!")
@@ -237,17 +245,18 @@ def main():
     with open(test_set, "r") as json_file:
         data_test = json.load(json_file)
 
-    selected_features = ['rating'] + ['text']
+    selected_features = ['rating'] + ['title'] + ['text']
     df_train = convert_json_dataframe(data_train)
     df_test = convert_json_dataframe(data_test)
     tokenizer = AutoTokenizer.from_pretrained("LiYuan/amazon-review-sentiment-analysis")
     id2label = {0: "1 star", 1: "2 stars", 2: "3 stars",3: "4 stars",4: "5 stars"}
     label2id = {"1 star": 0, "2 stars": 1,"3 stars":2,"4 stars":3,"5 stars":4}
     
-    model = AutoModelForSequenceClassification.from_pretrained("trained-models/shuffle_35000_3_alltrue", num_labels=5, id2label=id2label, label2id=label2id)
+    model = AutoModelForSequenceClassification.from_pretrained("LiYuan/amazon-review-sentiment-analysis", num_labels=5, id2label=id2label, label2id=label2id)
+    trained_model = AutoModelForSequenceClassification.from_pretrained("trained-models/35000_3_alltext", num_labels=5, id2label=id2label, label2id=label2id)
 
-    #train_model(selected_features, df_train, 12500, tokenizer, model, "test_trainer", True)
-    make_predictions(selected_features, df_test, tokenizer, model)
+    #train_model(selected_features, df_train, 100, tokenizer, model, "test_trainer2", False)
+    make_predictions(selected_features, df_test, tokenizer, trained_model)
 
 if __name__ == '__main__':
     main()
